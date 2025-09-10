@@ -1,0 +1,6 @@
+Dataset: src/mini_quoter/data/noaa_hdd_cdd_allstations.csv
+License: Public Domain (US)
+
+Contains material from NOAA (1991–2020 Climate Normals), a work of the U.S. Government (17 U.S.C. §105). 
+Attribution appreciated: “Contains data from NOAA.” 
+No warranties; use at your own risk.

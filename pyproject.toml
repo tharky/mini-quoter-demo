@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mini-quoter"
+version = "0.1.0"
+description = "Streamlit app for energy savings estimates"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Tiger Harkins", email = "tigerharkins04@gmail.com" }]
+dependencies = [
+  "streamlit",
+  "pandas",
+  "numpy",
+  "altair",
+  "pgeocode",
+  "openai"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+mini_quoter = ["data/noaa_hdd_cdd_allstations.csv"]
