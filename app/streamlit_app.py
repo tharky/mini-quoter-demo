@@ -1,3 +1,7 @@
+from pathlib import Path
+import sys
+repo_root = Path(__file__).resolve().parents[1]
+sys.path.append(str(repo_root / "src")) # Add src to sys.path so streamlit can import packages
 import streamlit as st
 import pandas as pd
 import altair as alt
