@@ -11,7 +11,7 @@ import streamlit as st
 from streamlit_cookies_controller import CookieController
 
 from mini_quoter.locator import find_nearest_station
-from mini_quoter.rate_limit import LIMIT, TZ, check, take
+from mini_quoter.rate_limit import LIMIT, TZ, check
 from mini_quoter.sim import calc_scenario, get_ai_response
 
 
@@ -302,7 +302,7 @@ with table_col:
 st.divider()
 st.subheader("Generated Project Summary")
 
-allowed, used, _, reset = check(uid)
+allowed, used, _, reset = take(uid)
 
 if not allowed:
     hrs, mins = divmod(reset // 60, 60)
@@ -333,14 +333,13 @@ else:
                 SEER_prop,
             )
 
-        _, used, _, reset = take(uid)
         st.markdown(explanation)
+
     except Exception as exc:
-        # Keep API/service failures from taking down the useful calculator.
         print(f"Generated summary failed: {exc}")
         st.warning(
             "The calculation completed, but the generated summary is "
-            "temporarily unavailable. No daily AI use was consumed."
+            "temporarily unavailable."
         )
 
 st.divider()
