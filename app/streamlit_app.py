@@ -11,7 +11,7 @@ import streamlit as st
 from streamlit_cookies_controller import CookieController
 
 from mini_quoter.locator import find_nearest_station
-from mini_quoter.rate_limit import LIMIT, TZ, check
+from mini_quoter.rate_limit import LIMIT, TZ, take
 from mini_quoter.sim import calc_scenario, get_ai_response
 
 
