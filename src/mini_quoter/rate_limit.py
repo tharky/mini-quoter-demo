@@ -15,10 +15,7 @@ def _store() -> dict[str, int]:
 def _seconds_to_midnight() -> int:
     now = datetime.datetime.now(TZ)
     tomorrow = (now + datetime.timedelta(days=1)).replace(
-        hour=0,
-        minute=0,
-        second=0,
-        microsecond=0,
+        hour=0, minute=0, second=0, microsecond=0
     )
     return int((tomorrow - now).total_seconds())
 
@@ -29,32 +26,22 @@ def _key_for(uid: str) -> str:
 
 
 def check(uid: str):
-    """Check quota without consuming a request."""
+    """Return the current quota state without consuming a request."""
     store = _store()
     key = _key_for(uid)
-
     used = store.get(key, 0)
     allowed = used < LIMIT
-
-    return (
-        allowed,
-        used,
-        max(LIMIT - used, 0),
-        _seconds_to_midnight(),
-    )
+    return allowed, used, max(LIMIT - used, 0), _seconds_to_midnight()
 
 
 def take(uid: str):
     """Consume one request if quota remains."""
     allowed, used, _, reset = check(uid)
-
     if not allowed:
         return False, used, 0, reset
 
     store = _store()
     key = _key_for(uid)
-
     store[key] = used + 1
     used = store[key]
-
     return True, used, LIMIT - used, reset
