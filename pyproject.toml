@@ -5,18 +5,20 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mini-quoter"
 version = "0.1.0"
-description = "Streamlit app for energy savings estimates"
+description = "Streamlit app for building energy upgrade estimates"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Tiger Harkins", email = "tigerharkins04@gmail.com" }]
+
 dependencies = [
-  "streamlit",
-  "pandas",
-  "numpy",
-  "altair",
-  "pgeocode",
-  "openai"
+    "streamlit",
+    "streamlit-cookies-controller>=0.0.4",
+    "pandas",
+    "numpy",
+    "altair",
+    "pgeocode",
+    "openai>=1.40",
 ]
 
 [tool.setuptools.packages.find]

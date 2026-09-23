@@ -1,13 +1,16 @@
 import datetime
 from zoneinfo import ZoneInfo
+
 import streamlit as st
 
 LIMIT = 3
 TZ = ZoneInfo("America/Chicago")
 
+
 @st.cache_resource
 def _store() -> dict[str, int]:
     return {}
+
 
 def _seconds_to_midnight() -> int:
     now = datetime.datetime.now(TZ)
@@ -16,16 +19,29 @@ def _seconds_to_midnight() -> int:
     )
     return int((tomorrow - now).total_seconds())
 
+
 def _key_for(uid: str) -> str:
     today = datetime.datetime.now(TZ).strftime("%Y%m%d")
     return f"{today}:{uid}"
 
+
+def check(uid: str):
+    """Return the current quota state without consuming a request."""
+    store = _store()
+    key = _key_for(uid)
+    used = store.get(key, 0)
+    allowed = used < LIMIT
+    return allowed, used, max(LIMIT - used, 0), _seconds_to_midnight()
+
+
 def take(uid: str):
-    s = _store()
-    k = _key_for(uid)
-    used = s.get(k, 0)
-    if used >= LIMIT:
-        return False, used, 0, _seconds_to_midnight()
-    s[k] = used + 1
-    used = s[k]
-    return True, used, LIMIT - used, _seconds_to_midnight()
+    """Consume one request if quota remains."""
+    allowed, used, _, reset = check(uid)
+    if not allowed:
+        return False, used, 0, reset
+
+    store = _store()
+    key = _key_for(uid)
+    store[key] = used + 1
+    used = store[key]
+    return True, used, LIMIT - used, reset

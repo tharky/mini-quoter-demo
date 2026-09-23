@@ -1,145 +1,364 @@
 from pathlib import Path
 import sys
-repo_root = Path(__file__).resolve().parents[1]
-sys.path.append(str(repo_root / "src")) # Add src to sys.path so streamlit can import packages
-import streamlit as st
-import pandas as pd
-import altair as alt
 import uuid
-from mini_quoter.locator import find_nearest_station
-from mini_quoter.sim import calc_scenario, get_ai_response
+
+repo_root = Path(__file__).resolve().parents[1]
+sys.path.append(str(repo_root / "src"))
+
+import altair as alt
+import pandas as pd
+import streamlit as st
 from streamlit_cookies_controller import CookieController
-from mini_quoter.rate_limit import take, LIMIT, TZ
+
+from mini_quoter.locator import find_nearest_station
+from mini_quoter.rate_limit import LIMIT, TZ, check, take
+from mini_quoter.sim import calc_scenario, get_ai_response
+
 
 st.set_page_config(
-    page_title="Tiger's Mini Energy Analysis",
+    page_title="Building Energy Upgrade Analyzer",
     page_icon="⚡",
-    layout="centered",
-    initial_sidebar_state="expanded"
+    layout="wide",
+    initial_sidebar_state="expanded",
 )
-st.title("⚡ Tiger's Mini Energy Analysis")
-st.caption("Annual savings from insulation & HVAC upgrades.")
 
-# Sidebar inputs
-st.sidebar.header("Inputs")
-zipcode = st.sidebar.text_input("ZIP code", "53715")
-sqft = st.sidebar.number_input("Building Size (sqft)", min_value=100.0, value=10000.0, step=100.0, format="%.0f")
+st.title("Building Energy Upgrade Analyzer")
+st.caption(
+    "Compare existing and proposed building-envelope and HVAC performance "
+    "using location-specific NOAA climate normals."
+)
 
-st.sidebar.subheader("Utility $$$")
-usd_per_kWh = st.sidebar.number_input("Electricity ($/kWh)",  min_value=0.01, value=0.15, step=0.01, format="%.3f")
-usd_per_therm = st.sidebar.number_input("Natural Gas ($/therm)", min_value=0.10, value=1.20, step=0.05, format="%.2f")
 
-st.sidebar.subheader("Baseline (current)")
-R_baseline = st.sidebar.number_input("R-value (effective)", min_value=0.1, value=10.0, step=1.0)
-AFUE_base = st.sidebar.number_input("AFUE (0–1)", min_value=0.3, max_value=1.0, value=0.80, step=0.01, format="%.2f")
-SEER_base = st.sidebar.number_input("SEER", min_value=5.0, value=13.0, step=0.5, format="%.1f")
+# Persistent browser ID used only for the daily public-demo AI limit.
+cookies = CookieController()
+uid = cookies.get("mqid")
 
-st.sidebar.subheader("Proposed (upgrade)")
-R_proposed = st.sidebar.number_input("R-value (upgraded)", min_value=0.1, value=20.0, step=1.0)
-AFUE_prop = st.sidebar.number_input("AFUE (0–1, upgraded)", min_value=0.3, max_value=1.0, value=0.95, step=0.01, format="%.2f")
-SEER_prop = st.sidebar.number_input("SEER (upgraded)", min_value=5.0, value=18.0, step=0.5, format="%.1f")
-
-# Sets cookies to limit user inputs per day (so my gpt doesn't get overloaded)
-c = CookieController()
-uid = c.get("mqid")
 if not uid:
     uid = uuid.uuid4().hex
-    c.set("mqid", uid, max_age=60*60*24*365)  # 1 year
-    st.stop() 
+    cookies.set("mqid", uid, max_age=60 * 60 * 24 * 365)
+    st.stop()
 
-compute = st.sidebar.button("Run Simulation")
 
-# Main window
-if compute:
-    try:
-        # Rate limiter
-        ok, used, left, reset = take(uid)
-        if not ok:
-            hrs, mins = divmod(reset // 60, 60)
-            st.error(f"Daily prompt limit reached ({LIMIT}/day). resets in {hrs:d}h {mins:d}m")
-            st.stop()
-        st.caption(f"{used}/{LIMIT} AI requests used today (resets at midnight {TZ})")
+# Inputs are grouped in a form so edits do not rerun the analysis until submit.
+with st.sidebar.form("simulation_inputs"):
+    st.header("Building Parameters")
 
-        # Get location data from zip code
-        loc_data = find_nearest_station(sqft, zipcode, usd_per_therm, usd_per_kWh)
-        name, city, state, HDD65, CDD65, station = (
-            loc_data["Name"], loc_data["City"], loc_data["State"],
-            float(loc_data["HDD65"]), float(loc_data["CDD65"]),
-            loc_data["Nearest Station"]
-        )
+    zipcode = st.text_input("ZIP code", "53715")
 
-        st.subheader(f"Building Location: {name}")
-        st.write(f"HDD65 **{HDD65:,.0f}**  •  CDD65 **{CDD65:,.0f}**  •  Weather Station **{station}**")
-        st.markdown(
-            f"Climate data from [NOAA]({"https://www.ncei.noaa.gov/"})  climate station closest to input ZIP code **{zipcode}**"
-        )
+    sqft = st.number_input(
+        "Building size (sq ft)",
+        min_value=100.0,
+        value=10000.0,
+        step=100.0,
+        format="%.0f",
+    )
 
-        # run engine (baseline vs proposed)
-        baseline = calc_scenario(
-            sqft, R_baseline, AFUE_base, SEER_base,
-            HDD65, CDD65, usd_per_therm, usd_per_kWh
-        )
-        proposed = calc_scenario(
-            sqft, R_proposed, AFUE_prop, SEER_prop,
-            HDD65, CDD65, usd_per_therm, usd_per_kWh
-        )
+    st.subheader("Utility Rates")
 
-        # Calculate savings
-        savings = {
-            "therms": baseline["therms"] - proposed["therms"],
-            "kWh":    baseline["kWh"]    - proposed["kWh"],
-            "cost":   baseline["cost"]   - proposed["cost"],
+    usd_per_kWh = st.number_input(
+        "Electricity ($/kWh)",
+        min_value=0.01,
+        value=0.15,
+        step=0.01,
+        format="%.3f",
+    )
+
+    usd_per_therm = st.number_input(
+        "Natural gas ($/therm)",
+        min_value=0.10,
+        value=1.20,
+        step=0.05,
+        format="%.2f",
+    )
+
+    st.divider()
+    st.subheader("Existing Conditions")
+
+    R_baseline = st.number_input(
+        "Effective R-value",
+        min_value=0.1,
+        value=10.0,
+        step=1.0,
+    )
+
+    AFUE_base = st.number_input(
+        "AFUE",
+        min_value=0.3,
+        max_value=1.0,
+        value=0.80,
+        step=0.01,
+        format="%.2f",
+    )
+
+    SEER_base = st.number_input(
+        "SEER",
+        min_value=5.0,
+        value=13.0,
+        step=0.5,
+        format="%.1f",
+    )
+
+    st.divider()
+    st.subheader("Proposed Upgrade")
+
+    R_proposed = st.number_input(
+        "Effective R-value",
+        min_value=0.1,
+        value=20.0,
+        step=1.0,
+        key="proposed_r",
+    )
+
+    AFUE_prop = st.number_input(
+        "AFUE",
+        min_value=0.3,
+        max_value=1.0,
+        value=0.95,
+        step=0.01,
+        format="%.2f",
+        key="proposed_afue",
+    )
+
+    SEER_prop = st.number_input(
+        "SEER",
+        min_value=5.0,
+        value=18.0,
+        step=0.5,
+        format="%.1f",
+        key="proposed_seer",
+    )
+
+    compute = st.form_submit_button(
+        "Run Analysis",
+        type="primary",
+        use_container_width=True,
+    )
+
+
+if not compute:
+    st.info(
+        "Configure the building and proposed upgrade in the sidebar, "
+        "then select **Run Analysis**."
+    )
+    st.stop()
+
+
+# Run the calculation engine. These results remain available even if the
+# public-demo AI quota is exhausted or the summary service is unavailable.
+try:
+    loc_data = find_nearest_station(
+        sqft,
+        zipcode,
+        usd_per_therm,
+        usd_per_kWh,
+    )
+
+    name = loc_data["Name"]
+    HDD65 = float(loc_data["HDD65"])
+    CDD65 = float(loc_data["CDD65"])
+    station = loc_data["Nearest Station"]
+
+    baseline = calc_scenario(
+        sqft,
+        R_baseline,
+        AFUE_base,
+        SEER_base,
+        HDD65,
+        CDD65,
+        usd_per_therm,
+        usd_per_kWh,
+    )
+
+    proposed = calc_scenario(
+        sqft,
+        R_proposed,
+        AFUE_prop,
+        SEER_prop,
+        HDD65,
+        CDD65,
+        usd_per_therm,
+        usd_per_kWh,
+    )
+except Exception as exc:
+    st.error(f"Unable to run the analysis: {exc}")
+    st.stop()
+
+
+savings = {
+    "therms": baseline["therms"] - proposed["therms"],
+    "kWh": baseline["kWh"] - proposed["kWh"],
+    "cost": baseline["cost"] - proposed["cost"],
+}
+
+cost_reduction_pct = (
+    100 * savings["cost"] / baseline["cost"]
+    if baseline["cost"] > 0
+    else 0
+)
+
+
+# Climate basis.
+st.caption("CLIMATE BASIS")
+st.write(f"**{name}** · ZIP {zipcode}")
+st.caption(
+    f"NOAA station: {station}  |  "
+    f"HDD65: {HDD65:,.0f}  |  "
+    f"CDD65: {CDD65:,.0f}"
+)
+
+
+# Headline results.
+st.subheader("Annual Cost Comparison")
+
+m1, m2, m3, m4 = st.columns(4)
+m1.metric("Estimated Savings", f"${savings['cost']:,.0f}/yr")
+m2.metric("Existing", f"${baseline['cost']:,.0f}/yr")
+m3.metric("Proposed", f"${proposed['cost']:,.0f}/yr")
+m4.metric("Reduction", f"{cost_reduction_pct:.1f}%")
+
+st.divider()
+
+
+# Cost chart and energy-use table.
+chart_col, table_col = st.columns([1.3, 1])
+
+with chart_col:
+    st.subheader("Estimated Annual Cost")
+
+    chart_df = pd.DataFrame(
+        {
+            "Scenario": ["Existing", "Proposed"],
+            "Annual Cost": [baseline["cost"], proposed["cost"]],
         }
-        heat_pct = (100.0 * (baseline["UA"] - proposed["UA"]) / baseline["UA"]) if baseline["UA"] > 0 else 0.0
+    )
 
-        # Comparison table and bar chart
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Annual cost (baseline)", f"${baseline['cost']:,.0f}")
-        c2.metric("Annual cost (proposed)", f"${proposed['cost']:,.0f}")
-        c3.metric("Savings / yr", f"${savings['cost']:,.0f}")
-        table = pd.DataFrame({
-            "therms/yr": [baseline["therms"], proposed["therms"], savings["therms"]],
-            "kWh/yr":    [baseline["kWh"],    proposed["kWh"],    savings["kWh"]],
-            "$/yr":      [baseline["cost"],   proposed["cost"],   savings["cost"]],
-        }, index=["Baseline", "Proposed", "Savings"])
-        st.dataframe(
-            table.style.format({
-                "therms/yr": "{:.0f}",
-                "kWh/yr": "{:.0f}",
-                "$/yr": "${:,.0f}"
-            }),
-            width='stretch'
+    bars = (
+        alt.Chart(chart_df)
+        .mark_bar(size=70)
+        .encode(
+            x=alt.X("Scenario:N", sort=None, title=None),
+            y=alt.Y("Annual Cost:Q", title="Annual cost ($/yr)"),
+            tooltip=[
+                "Scenario:N",
+                alt.Tooltip(
+                    "Annual Cost:Q",
+                    title="Annual Cost",
+                    format="$,.0f",
+                ),
+            ],
         )
-        chart_df = table.loc[["Baseline", "Proposed"], ["$/yr"]].reset_index()
-        chart_df.columns = ["scenario", "cost_per_year"]
-        chart = alt.Chart(chart_df).mark_bar().encode(
-            x=alt.X("scenario:N", sort=None, title=""),
-            y=alt.Y("cost_per_year:Q", title="Cost ($/yr)")
-        ).properties(height=280)
-        st.altair_chart(chart, use_container_width=True)
+    )
 
-        
-        # Get chatgpt writing about our stats (with nifty loading symbol until we get it)
-        placeholder = st.empty()
-        with st.spinner("Generating analysis..."):
-            explanation = get_ai_response(
-                loc_data["Name"], loc_data["HDD65"], loc_data["CDD65"],
-                baseline["UA"], baseline["therms"], baseline["kWh"], baseline["cost"],
-                proposed["UA"], proposed["therms"], proposed["kWh"], proposed["cost"],
-                R_baseline, R_proposed,
-                AFUE_base, AFUE_prop,
-                SEER_base, SEER_prop,
-            )
-        placeholder.empty()
-        st.markdown(explanation)
-
-        # csv download
-        csv = table.to_csv(index=False).encode()
-        st.download_button("Download .csv", data=csv, file_name="quoter_results.csv", mime="text/csv")
-        st.caption("Please note: this data is a conduction-only model (UA·HDD/CDD). Calculations ignore potential air leakage and HVAC part-loading.\n" +
-            "Narrative section automatically generated from simulation results."
+    labels = (
+        alt.Chart(chart_df)
+        .mark_text(dy=-10, fontSize=14)
+        .encode(
+            x=alt.X("Scenario:N", sort=None),
+            y="Annual Cost:Q",
+            text=alt.Text("Annual Cost:Q", format="$,.0f"),
         )
-    except Exception as e:
-        st.error(str(e))
+    )
+
+    chart = (bars + labels).properties(height=320)
+    st.altair_chart(chart, use_container_width=True)
+
+with table_col:
+    st.subheader("Energy Use")
+
+    table = pd.DataFrame(
+        {
+            "Existing": [
+                baseline["therms"],
+                baseline["kWh"],
+                baseline["cost"],
+            ],
+            "Proposed": [
+                proposed["therms"],
+                proposed["kWh"],
+                proposed["cost"],
+            ],
+            "Savings": [
+                savings["therms"],
+                savings["kWh"],
+                savings["cost"],
+            ],
+        },
+        index=[
+            "Natural Gas (therms/yr)",
+            "Electricity (kWh/yr)",
+            "Energy Cost ($/yr)",
+        ],
+    )
+
+    st.dataframe(
+        table.style.format("{:,.0f}"),
+        width="stretch",
+        hide_index=False,
+    )
+
+
+# Generated summary. Quota is checked first but only consumed after a
+# successful OpenAI response, so failed requests do not burn a daily use.
+st.divider()
+st.subheader("Generated Project Summary")
+
+allowed, used, _, reset = check(uid)
+
+if not allowed:
+    hrs, mins = divmod(reset // 60, 60)
+    st.info(
+        f"Daily generated-summary limit reached ({LIMIT}/day). "
+        f"The calculator remains available. Resets in {hrs:d}h {mins:d}m."
+    )
 else:
-    st.info("Enter building info and click **Run Simulation**.")
+    try:
+        with st.spinner("Generating project summary..."):
+            explanation = get_ai_response(
+                loc_data["Name"],
+                loc_data["HDD65"],
+                loc_data["CDD65"],
+                baseline["UA"],
+                baseline["therms"],
+                baseline["kWh"],
+                baseline["cost"],
+                proposed["UA"],
+                proposed["therms"],
+                proposed["kWh"],
+                proposed["cost"],
+                R_baseline,
+                R_proposed,
+                AFUE_base,
+                AFUE_prop,
+                SEER_base,
+                SEER_prop,
+            )
+
+        _, used, _, reset = take(uid)
+        st.markdown(explanation)
+    except Exception as exc:
+        # Keep API/service failures from taking down the useful calculator.
+        print(f"Generated summary failed: {exc}")
+        st.warning(
+            "The calculation completed, but the generated summary is "
+            "temporarily unavailable. No daily AI use was consumed."
+        )
+
+st.divider()
+st.caption(
+    f"{used}/{LIMIT} AI summaries used today · "
+    f"Resets at midnight {TZ}"
+)
+
+with st.expander("Methodology"):
+    st.markdown(
+        """
+        **Climate:** NOAA HDD65 and CDD65 normals from the station nearest
+        the entered ZIP code.
+
+        **Model:** Annual conductive heating and cooling loads are estimated
+        from building area, effective R-value, AFUE, and SEER.
+
+        **Scope:** This simplified model excludes infiltration, solar gains,
+        internal loads, humidity, and HVAC part-load effects.
+        """
+    )
