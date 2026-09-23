@@ -1,5 +1,8 @@
 # Building Energy Upgrade Analyzer
 
+### [Live Demo](https://mini-quoter-demo.streamlit.app/)
+
+
 A Streamlit demo that estimates annual heating and cooling energy costs for an existing building and a proposed upgrade using NOAA climate normals.
 
 ## Features
@@ -16,7 +19,7 @@ The calculator uses a simplified conduction model based on effective R-value, bu
 
 The model does not include infiltration, solar gains, internal loads, humidity, or HVAC part-load behavior.
 
-## Local Setup
+## Setup
 
 ```powershell
 py -m venv .venv
