@@ -24,27 +24,27 @@ def find_nearest_station(sqft, zipcode, usd_per_therm, usd_per_kwh):
 
     # Earth's radius in miles
     R_miles = 3958.7613
-    # Convert degrees to radians for trig functions
+    # Convert degrees to radians for trig fns
     lat1 = np.radians(zip_lat)
     lon1 = np.radians(zip_lon)
     lat2 = np.radians(lats)
     lon2 = np.radians(lons)
 
-    # subtract difference of zipcode lat/long from stations lat/long
+    # zip to station diffs
     dlat = lat2 - lat1
     dlon = lon2 - lon1
 
-    # Haversine formula: look at north/south difference and east/west difference and get how far apart the stations vs the zipcode are.
+    # Haversine formula
     a = np.sin(dlat/2.0)**2 + np.cos(lat1)*np.cos(lat2)*np.sin(dlon/2.0)**2
-    # Convert to radian value and multiply by earths radius to get distance in miles
+    # get distance in miles
     c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
     dist_mi = R_miles * c
 
-    # Pick nearest station (minimum distance)
+    # Pick nearest station
     idx = int(np.argmin(dist_mi))
     rec = climate.iloc[idx]
 
-    # Pull information from the station and return detailed data on location and climate
+    # Pull information from the station and return
     location_name = f"{zip_city}, {zip_state}"
     HDD65 = float(rec["HDD65"])
     CDD65 = float(rec["CDD65"])

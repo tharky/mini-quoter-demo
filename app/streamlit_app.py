@@ -16,20 +16,18 @@ from mini_quoter.sim import calc_scenario, get_ai_response
 
 
 st.set_page_config(
-    page_title="Building Energy Upgrade Analyzer",
-    page_icon="⚡",
+    page_title="Building Envelope Upgrade Estimator",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-st.title("Building Energy Upgrade Analyzer")
+st.title("Building Envelope Upgrade Estimator")
 st.caption(
-    "Compare existing and proposed building-envelope and HVAC performance "
+    "Compare current and proposed building-envelope and HVAC performance "
     "using location-specific NOAA climate normals."
 )
 
-
-# Persistent browser ID used only for the daily public-demo AI limit.
+# browser ID used for daily demo AI limit.
 cookies = CookieController()
 uid = cookies.get("mqid")
 
@@ -38,8 +36,6 @@ if not uid:
     cookies.set("mqid", uid, max_age=60 * 60 * 24 * 365)
     st.stop()
 
-
-# Inputs are grouped in a form so edits do not rerun the analysis until submit.
 with st.sidebar.form("simulation_inputs"):
     st.header("Building Parameters")
 

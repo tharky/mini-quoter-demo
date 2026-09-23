@@ -5,18 +5,14 @@ from mini_quoter.locator import find_nearest_station
 
 # Give inputs, verify correct math
 def test_calc_scenario():
-    # basic inputs
     test = calc_scenario(
         sqft=10000, R_value=10, AFUE=0.80, SEER=13,
         HDD65=6000, CDD65=1200,
         usd_per_therm=1.20, usd_per_kWh=0.12,
     )
-    # UA = 10000/10 = 1000
     assert test["UA"] == pytest.approx(1000)
-    # Degree-hours
     assert test["HDD_hours"] == 6000 * 24
     assert test["CDD_hours"] == 1200 * 24
-    # Therms ≈ 1.8e3, kWh ≈ 2215.38, cost ≈ 2425.85
     assert test["therms"] == pytest.approx(1800, rel=1e-3)
     assert test["kWh"] == pytest.approx(2_215.38, rel=1e-3)
     assert test["cost"] == pytest.approx(2425.85, rel=1e-3)
